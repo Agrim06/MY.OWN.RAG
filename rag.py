@@ -2,12 +2,36 @@ import os
 import numpy as np
 from google import genai
 from dotenv import load_dotenv
+import fitz
 
 load_dotenv()
 
 client = genai.Client(
     api_key= os.getenv("GEMINI_API_KEY")
 )
+
+
+def load_pdf(pdf_path):
+    doc = fitz.open(pdf_path)
+    text = ""
+
+    for page in doc:
+        text += page.get_text() + "\n"
+    
+    return text
+
+def chunking(text, chunk_size=1000, chunk_overlap=200):
+    chunks = []
+    start = 0
+
+    while start < len(text):
+        end = start + chunk_size
+        chunk = text[start:end]
+        chunks.append(chunk)
+        start += chunk_size - chunk_overlap
+    
+    return chunks
+
 
 def get_embedding(text):
     response = client.models.embed_content(

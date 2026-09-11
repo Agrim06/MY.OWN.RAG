@@ -2,7 +2,8 @@ import os
 import numpy as np
 from google import genai
 from dotenv import load_dotenv
-import fitz
+import pymupdf as fitz
+
 
 load_dotenv()
 
@@ -114,8 +115,98 @@ def generate_answer(query , retrieved_chunks):
     """
 
     response = client.models.generate_content(
-        model = "gemin-2.5-flash",
+        model="gemini-2.5-flash",
         contents=prompt
     )
 
     return response.text
+
+
+def main():
+    pdf_path = "docs/doc.pdf"
+
+    print(">>>>>>Loading PDF>>>>>")
+
+    text = load_pdf(pdf_path)
+    print(
+        f"PDF loaded."
+        f" Characters: {len(text)}"
+    )
+
+    chunks = chunking(text)
+
+    print(f"Created {len(chunks)} chunks")
+
+    print("\nCreating embeddings...")
+    vector_store = create_vector_store(
+        chunks
+    )
+
+    print("\nVector store created!")
+
+    while True:
+
+        query = input(
+            "\nAsk a question "
+            "(type 'exit' to quit): "
+        )
+
+
+        if query.lower() == "exit":
+
+            break
+
+        print(
+            "\nRetrieving relevant chunks..."
+        )
+
+        retrieved_chunks = retrieve(
+            query,
+            vector_store,
+            k=3
+        )
+
+        print("\nRetrieved chunks:")
+
+        for i, item in enumerate(
+            retrieved_chunks
+        ):
+
+            print(
+                f"\n--- Chunk {i + 1} "
+                f"| Score: "
+                f"{item['score']:.4f} ---"
+            )
+
+            print(
+                item["text"][:500]
+            )
+
+        print(
+            "\nGenerating answer..."
+        )
+
+        answer = generate_answer(
+
+            query,
+
+            retrieved_chunks
+
+        )
+
+
+        print("\n====================")
+
+        print("ANSWER")
+
+        print("====================")
+
+        print(answer)
+
+
+if __name__ == "__main__":
+
+    main()
+
+
+    

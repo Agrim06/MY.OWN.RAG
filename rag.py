@@ -41,6 +41,45 @@ def get_embedding(text):
 
     return np.array(response.embeddings[0].values)
 
+
+def create_vector_store(chunks):
+    vector_store = []
+
+    for i , chunk in enumerate(chunks):
+        print(f"Creating embedding {i + 1}/{len(chunks)}")
+
+        embedding = get_embedding(chunk)
+
+        vector_store.append({
+            "text": chunk,
+            "embedding": embedding
+        })
+
+    return vector_store
+
+
+def retrieve(query, vector_store, k=3):
+
+    query_embedding = get_embedding(query)
+
+    results = []
+
+    for item in vector_store:
+        score = cosine_similarity(
+            query_embedding,
+            item["embedding"]
+        )
+
+        results.append({
+            "text": item["text"],
+            "score": score
+        })
+
+    results.sort(key=lambda x: x["score"], reverse=True)
+
+    return results[:k]
+
+
 def cosine_similarity(vector_a, vector_b):
     return np.dot(vector_a, vector_b) / (
         np.linalg.norm(vector_a) *

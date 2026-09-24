@@ -1,84 +1,61 @@
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_chroma import Chroma
+from langchain_community.document_loaders import PyMuPDFLoader
+import chromadb
+
+from dotenv import load_dotenv
 import os
 import numpy as np
-from google import genai
-from dotenv import load_dotenv
-import pymupdf as fitz
 
 
 load_dotenv()
 
-client = genai.Client(
-    api_key= os.getenv("GEMINI_API_KEY")
-)
+model = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.5)
+client = chromadb.Client()
 
+embeddings = GoogleGenerativeAIEmbeddings(
+        model="gemini-embedding-001",
+        output_dimensionality=768
+    )
 
 def load_pdf(pdf_path):
-    doc = fitz.open(pdf_path)
-    text = ""
+    loader = PyMuPDFLoader(pdf_path)
+    docs = loader.load()
 
-    for page in doc:
-        text += page.get_text() + "\n"
+    return docs
     
-    return text
 
-def chunking(text, chunk_size=1000, chunk_overlap=200):
-    chunks = []
-    start = 0
+def chunking(docs, chunk_size=1000, chunk_overlap=200):
+    text_splitter = RecursiveCharacterTextSplitter(
+        separators=["\n\n", "\n", ".", " "],
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        length_function=len
+    )
 
-    while start < len(text):
-        end = start + chunk_size
-        chunk = text[start:end]
-        chunks.append(chunk)
-        start += chunk_size - chunk_overlap
+    chunks = text_splitter.split_documents(docs)
     
     return chunks
 
 
-def get_embedding(text):
-    response = client.models.embed_content(
-        model="gemini-embedding-001",
-        contents=text
-    )
-
-    return np.array(response.embeddings[0].values)
+def get_embedding(docs):
+    return embeddings.embed_query(docs)
 
 
 def create_vector_store(chunks):
-    vector_store = []
-
-    for i , chunk in enumerate(chunks):
-        print(f"Creating embedding {i + 1}/{len(chunks)}")
-
-        embedding = get_embedding(chunk)
-
-        vector_store.append({
-            "text": chunk,
-            "embedding": embedding
-        })
-
+    
+    vector_store = Chroma.from_documents(
+    documents = chunks,
+    embedding = embeddings,
+    collection_name="RAG_DB",
+    persist_directory="./chroma_db",
+)
     return vector_store
 
 
 def retrieve(query, vector_store, k=3):
-
-    query_embedding = get_embedding(query)
-
-    results = []
-
-    for item in vector_store:
-        score = cosine_similarity(
-            query_embedding,
-            item["embedding"]
-        )
-
-        results.append({
-            "text": item["text"],
-            "score": score
-        })
-
-    results.sort(key=lambda x: x["score"], reverse=True)
-
-    return results[:k]
+    return vector_store.similarity_search(query, k=k)
 
 
 def cosine_similarity(vector_a, vector_b):
@@ -90,8 +67,8 @@ def cosine_similarity(vector_a, vector_b):
 def generate_answer(query , retrieved_chunks):
 
     context = "\n\n".join(
-        item["text"]
-        for item in retrieved_chunks
+        doc.page_content
+        for doc in retrieved_chunks
     )
 
     prompt = f"""
@@ -114,10 +91,7 @@ def generate_answer(query , retrieved_chunks):
     Answer:
     """
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt
-    )
+    response = model.invoke(prompt)
 
     return response.text
 
@@ -138,9 +112,7 @@ def main():
     print(f"Created {len(chunks)} chunks")
 
     print("\nCreating embeddings...")
-    vector_store = create_vector_store(
-        chunks
-    )
+    vector_store = create_vector_store(chunks)
 
     print("\nVector store created!")
 
@@ -168,31 +140,21 @@ def main():
 
         print("\nRetrieved chunks:")
 
-        for i, item in enumerate(
-            retrieved_chunks
-        ):
+        for i, item in enumerate(retrieved_chunks):
 
             print(
-                f"\n--- Chunk {i + 1} "
-                f"| Score: "
-                f"{item['score']:.4f} ---"
+                f"\n--- Chunk {i + 1} ---"
             )
 
             print(
-                item["text"][:500]
+                item.page_content
             )
 
         print(
             "\nGenerating answer..."
         )
 
-        answer = generate_answer(
-
-            query,
-
-            retrieved_chunks
-
-        )
+        answer = generate_answer(query, retrieved_chunks)
 
 
         print("\n====================")
